@@ -1,7 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
 
-const DEFAULT_MODEL = 'gemini-4-hydrogen';
-const FALLBACK_FREE_MODEL = 'gemini-3.1-flash-lite';
+// Model IDs verified against the Gemini API docs (Nov 2026).
+// Override the first one with GEMINI_MODEL in the environment variables.
+// If a model is missing (404), overloaded (503) or out of quota (429),
+// the next one in the list is tried automatically.
+const DEFAULT_MODEL = 'gemini-3.8-flash';
+const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
 
 export interface VitalSnapshot {
   bpm?: number;
@@ -35,6 +39,7 @@ export interface ChatRequestPayload {
   vitals?: VitalSnapshot | null;
   reportItems?: ReportItem[] | null;
   lang?: string;
+  stream?: boolean;
 }
 
 export function buildSystemInstruction(
@@ -86,23 +91,76 @@ Guidelines:
 - Never invent readings that were not provided; if readings are missing, mention that politely and invite them to enter values in the Chest Belt page or share them here.`;
 }
 
-export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
+type HttpError = Error & { status?: number };
+
+function httpError(message: string, status: number): HttpError {
+  const err = new Error(message) as HttpError;
+  err.status = status;
+  return err;
+}
+
+function isQuotaError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  const msg = e?.message || '';
+  return (
+    e?.status === 429 ||
+    msg.includes('"code":429') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.toLowerCase().includes('quota')
+  );
+}
+
+// Errors where trying the next model in the list makes sense.
+function shouldTryNextModel(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  const msg = e?.message || '';
+  return (
+    isQuotaError(err) ||
+    e?.status === 404 ||
+    e?.status === 503 ||
+    e?.status === 500 ||
+    msg.includes('"code":404') ||
+    msg.includes('"code":503') ||
+    msg.includes('NOT_FOUND') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.toLowerCase().includes('is not found')
+  );
+}
+
+function toFriendlyError(err: unknown): Error {
+  const e = err as { status?: number; message?: string };
+  const rawMsg = e?.message || 'Failed to generate response from Wanas AI.';
+
+  if (isQuotaError(err)) {
+    return httpError(
+      'تم تجاوز الحد المجاني اليومي لطلبات الذكاء الاصطناعي حالياً (429). يرجى المحاولة بعد قليل أو استخدام مفتاح API جديد / تفعيل الفوترة في Google AI Studio.',
+      429
+    );
+  }
+  if (
+    e?.status === 400 && /API key|API_KEY_INVALID/i.test(rawMsg) ||
+    e?.status === 401 ||
+    e?.status === 403
+  ) {
+    return httpError(
+      'مفتاح GEMINI_API_KEY غير صالح أو غير مسموح له. تأكد من المفتاح في إعدادات Vercel ثم اعمل Redeploy.',
+      e?.status && e.status >= 400 && e.status < 500 ? e.status : 400
+    );
+  }
+  return err instanceof Error ? (err as Error) : httpError(rawMsg, 500);
+}
+
+function prepareRequest(payload: ChatRequestPayload) {
   const rawKey = process.env.GEMINI_API_KEY ?? '';
   const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
-    const err = new Error('GEMINI_API_KEY is not configured. Please check environment variables.') as Error & {
-      status?: number;
-    };
-    err.status = 500;
-    throw err;
+    throw httpError('GEMINI_API_KEY is not configured. Please check environment variables.', 500);
   }
 
   const { message, history = [], vitals = null, reportItems = null, lang = 'ar' } = payload;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
-    const err = new Error('Message is required.') as Error & { status?: number };
-    err.status = 400;
-    throw err;
+    throw httpError('Message is required.', 400);
   }
 
   const useVertexAi = process.env.USE_VERTEX_AI === 'true';
@@ -110,27 +168,36 @@ export async function generateWanasReply(payload: ChatRequestPayload): Promise<s
   const ai = new GoogleGenAI({
     apiKey,
     ...(useVertexAi ? { vertexai: true } : {}),
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
   });
 
-  const formattedHistory = Array.isArray(history)
+  // Gemini requires the history to start with a "user" turn and to alternate roles.
+  // The welcome message is never sent to the server, but we sanitize anyway.
+  const cleaned = Array.isArray(history)
     ? history
         .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
         .slice(-16)
-        .map((m) => ({
-          role: m.role,
-          parts: [{ text: m.text }],
-        }))
     : [];
+  while (cleaned.length > 0 && cleaned[0].role !== 'user') cleaned.shift();
 
-  const systemInstruction = buildSystemInstruction(lang, vitals, reportItems);
+  const formattedHistory = cleaned.map((m) => ({
+    role: m.role,
+    parts: [{ text: m.text }],
+  }));
+
   const primaryModel = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
-  const modelsToTry =
-    primaryModel !== FALLBACK_FREE_MODEL ? [primaryModel, FALLBACK_FREE_MODEL] : [primaryModel];
+  const modelsToTry = [primaryModel, ...FALLBACK_MODELS.filter((m) => m !== primaryModel)];
+
+  return {
+    ai,
+    message: message.trim(),
+    formattedHistory,
+    systemInstruction: buildSystemInstruction(lang, vitals, reportItems),
+    modelsToTry,
+  };
+}
+
+export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
+  const { ai, message, formattedHistory, systemInstruction, modelsToTry } = prepareRequest(payload);
 
   let lastError: unknown = null;
 
@@ -142,42 +209,57 @@ export async function generateWanasReply(payload: ChatRequestPayload): Promise<s
         config: { systemInstruction },
         history: formattedHistory,
       });
-
-      const response = await chat.sendMessage({ message: message.trim() });
+      const response = await chat.sendMessage({ message });
       return (response.text ?? '').trim();
     } catch (err: unknown) {
       lastError = err;
-      const errObj = err as { status?: number; message?: string };
-      const msg = errObj?.message || '';
-      const isQuotaError =
-        errObj?.status === 429 ||
-        msg.includes('"code":429') ||
-        msg.includes('RESOURCE_EXHAUSTED') ||
-        msg.toLowerCase().includes('quota');
-
-      if (isQuotaError && i < modelsToTry.length - 1) {
-        console.warn(`Model ${model} hit 429 quota limit, retrying with ${modelsToTry[i + 1]}...`);
-        continue;
-      }
+      console.error(`Model ${model} failed:`, (err as Error)?.message);
+      if (i < modelsToTry.length - 1 && shouldTryNextModel(err)) continue;
       break;
     }
   }
 
-  const errObj = lastError as { status?: number; message?: string };
-  const rawMsg = errObj?.message || 'Failed to generate response from Wanas AI.';
-  const isQuotaError =
-    errObj?.status === 429 ||
-    rawMsg.includes('"code":429') ||
-    rawMsg.includes('RESOURCE_EXHAUSTED') ||
-    rawMsg.toLowerCase().includes('quota');
+  throw toFriendlyError(lastError);
+}
 
-  if (isQuotaError) {
-    const friendly = new Error(
-      'تم تجاوز الحد المجاني اليومي لطلبات الذكاء الاصطناعي حالياً (429). يرجى المحاولة بعد قليل أو استخدام مفتاح API جديد / تفعيل الفوترة في Google AI Studio.'
-    ) as Error & { status?: number };
-    friendly.status = 429;
-    throw friendly;
+/**
+ * Streams the reply as plain text chunks.
+ * Falling back to the next model is only possible BEFORE the first chunk is sent,
+ * so errors that happen before any output are thrown to the caller
+ * (which turns them into a proper HTTP error status).
+ */
+export async function* streamWanasReply(payload: ChatRequestPayload): AsyncGenerator<string, void, unknown> {
+  const { ai, message, formattedHistory, systemInstruction, modelsToTry } = prepareRequest(payload);
+
+  let lastError: unknown = null;
+
+  for (let i = 0; i < modelsToTry.length; i += 1) {
+    const model = modelsToTry[i];
+    let started = false;
+    try {
+      const chat = ai.chats.create({
+        model,
+        config: { systemInstruction },
+        history: formattedHistory,
+      });
+      const stream = await chat.sendMessageStream({ message });
+
+      for await (const chunk of stream) {
+        const text = chunk.text;
+        if (text) {
+          started = true;
+          yield text;
+        }
+      }
+      return;
+    } catch (err: unknown) {
+      lastError = err;
+      console.error(`Model ${model} stream failed:`, (err as Error)?.message);
+      // If we already sent text to the user, we cannot silently switch models.
+      if (!started && i < modelsToTry.length - 1 && shouldTryNextModel(err)) continue;
+      break;
+    }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(rawMsg);
+  throw toFriendlyError(lastError);
 }
