@@ -37,28 +37,6 @@ export interface ChatRequestPayload {
   stream?: boolean;
 }
 
-let cachedClientKey = '';
-let cachedAiClient: GoogleGenAI | null = null;
-
-function getAiClient(apiKey: string, useVertexAi: boolean): GoogleGenAI {
-  const cacheKey = `${apiKey}:${useVertexAi}`;
-  if (cachedAiClient && cachedClientKey === cacheKey) {
-    return cachedAiClient;
-  }
-
-  cachedClientKey = cacheKey;
-  cachedAiClient = new GoogleGenAI({
-    apiKey,
-    ...(useVertexAi ? { vertexai: true } : {}),
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
-  return cachedAiClient;
-}
-
 export function buildSystemInstruction(
   lang: string,
   vitals?: VitalSnapshot | null,
@@ -66,26 +44,41 @@ export function buildSystemInstruction(
 ): string {
   const vitalsBlock = vitals
     ? JSON.stringify(vitals)
-    : 'None entered yet.';
+    : 'No readings entered yet in Chest Belt.';
 
   const reportBlock =
     reportItems && reportItems.length > 0
-      ? reportItems.map((i) => `${i.name}(${i.level}): ${i.msg}`).join(' | ')
-      : 'None yet.';
+      ? reportItems.map((i) => `- [${i.level.toUpperCase()}] ${i.name}: ${i.msg}`).join('\n')
+      : 'No generated report yet.';
 
-  return `You are "ونس" (Wanas), a fast, supportive AI health & mission companion for astronauts in WANAS.
+  return `You are "ونس" (Wanas), an empathetic, medically knowledgeable AI companion in the WANAS astronaut health ecosystem.
 
-WANAS Ranges (Green=Normal | Yellow=Warning | Red=Emergency):
-HR 60-100 (Warn 50-59/101-120, Red <50/>120) | SpO2 95-100% (Warn 90-94.9%, Red <90%) | Resp 12-20 (Warn 8-11/21-28, Red <8/>28) | Temp 36.5-37.5°C (Warn 35.5-36.4/37.6-38.5, Red <35.5/>38.5) | BP ~120/80 (Red <90/60 or >=160/100) | Accel 0-1g (Warn 1.01-2g, Red >2g fall) | Cortisol 10-20 (Warn 7-9.9/20.1-26, Red <7/>26) | Caffeine 100-200mg (Warn <100/201-399, Red >=400) | Water 2-2.5L (Warn 1-1.9/2.6-5, Red <1/>5) | Electrolytes 135-145 (Warn 130-134/146-150, Red <130/>150) | CO2 <0.5% (Warn 0.5-0.6%, Red >0.6%).
+Duties:
+1. Interpret the astronaut's Chest Belt vital & environmental readings using the exact WANAS thresholds below.
+2. Give concise, practical medical, nutritional (healthy space eating), psychological, and operational advice.
+3. Prepare clear periodic health status reports for Earth Mission Control when internet is available.
 
-Live Readings: ${vitalsBlock}
-Status: ${reportBlock}
+Exact WANAS Thresholds (Green=Normal | Yellow=Warning | Red=Emergency):
+- Heart Rate: 60–100 BPM | Warning 50–59 or 101–120 | Red <50 or >120
+- SpO2: 95–100% | Warning 90–94.9% | Red <90%
+- Respiration: 12–20 RPM | Warning 8–11 or 21–28 | Red <8 or >28
+- Temp: 36.5–37.5°C | Warning 35.5–36.4 or 37.6–38.5 | Red <35.5 or >38.5
+- Blood Pressure: ~120/80 (SYS 100–125 / DIA 65–85) | Red Low <90/60 or High >=160/100
+- Acceleration: 0–1 g | Warning 1.01–2 g | Red >2 g (fall/impact)
+- Cortisol: 10–20 μg/dL | Warning 7–9.9 or 20.1–26 | Red <7 or >26
+- Daily Caffeine: 100–200 mg | Warning <100 or 201–399 | Red >=400
+- Hydration: 2–2.5 L/day | Warning 1–1.9 or 2.6–5 | Red <1 (dehydration) or >5
+- Electrolytes: 135–145 mmol/L | Warning 130–134 or 146–150 | Red <130 or >150
+- CO2: <0.5% | Warning 0.5–0.6% | Red >0.6%
 
-Rules:
-- Reply in ${lang === 'en' ? 'English' : 'Arabic'} (match user's language if different).
-- Be fast, direct, and concise: 3 to 6 short bullet points or brief sentences by default (only write longer sections when asked for a full report or meal plan).
-- Format cleanly with Markdown (**bold**, bullet lists, short ### heading if helpful).
-- Give practical health, nutrition, psychological, or operational steps for any Yellow/Red values, and never invent missing readings.`;
+Current Readings: ${vitalsBlock}
+Evaluated Statuses:
+${reportBlock}
+
+Guidelines:
+- Respond in ${lang === 'en' ? 'English' : 'Arabic'} (match user language if different).
+- Use clean Markdown (### headings, **bold** key values/actions, bullet lists). Keep answers clear, direct, and concise unless detail is requested.
+- Never invent readings that were not provided.`;
 }
 
 function createChatSession(payload: ChatRequestPayload) {
@@ -109,12 +102,21 @@ function createChatSession(payload: ChatRequestPayload) {
 
   const useVertexAi = process.env.USE_VERTEX_AI === 'true';
   const modelName = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
-  const ai = getAiClient(apiKey, useVertexAi);
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    ...(useVertexAi ? { vertexai: true } : {}),
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 
   const formattedHistory = Array.isArray(history)
     ? history
         .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
-        .slice(-8)
+        .slice(-10)
         .map((m) => ({
           role: m.role,
           parts: [{ text: m.text }],
@@ -122,9 +124,7 @@ function createChatSession(payload: ChatRequestPayload) {
     : [];
 
   let thinkingConfig: Record<string, unknown> | undefined;
-  if (modelName === 'gemini-3.1-flash-lite') {
-    thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
-  } else if (modelName.startsWith('gemini-4') || modelName.startsWith('gemini-3')) {
+  if (modelName.startsWith('gemini-4') || modelName.startsWith('gemini-3')) {
     thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
   } else if (modelName.startsWith('gemini-2.5')) {
     thinkingConfig = { thinkingBudget: 0 };
