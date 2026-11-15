@@ -1,70 +1,62 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import { generateWanasReply, streamWanasReply, type ChatRequestPayload } from '../lib/wanasAi.ts';
 
-interface VercelRequest extends IncomingMessage {
-  body?: unknown;
+export const config = {
+  runtime: 'nodejs',
+};
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+  });
 }
 
-function sendJson(res: ServerResponse, statusCode: number, data: unknown) {
-  res.statusCode = statusCode;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(data));
-}
-
-async function readBody(req: VercelRequest): Promise<ChatRequestPayload> {
-  if (req.body !== undefined && req.body !== null) {
-    if (typeof req.body === 'string') {
-      return JSON.parse(req.body || '{}') as ChatRequestPayload;
-    }
-    if (typeof req.body === 'object') {
-      return req.body as ChatRequestPayload;
-    }
-  }
-
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
-  return raw ? (JSON.parse(raw) as ChatRequestPayload) : {};
-}
-
-export default async function handler(req: VercelRequest, res: ServerResponse) {
-  if (req.method !== 'POST') {
-    return sendJson(res, 405, { error: 'Method Not Allowed' });
-  }
-
-  let headersSentForStream = false;
-
+export async function POST(request: Request): Promise<Response> {
   try {
-    const payload = await readBody(req);
+    const payload = (await request.json().catch(() => ({}))) as ChatRequestPayload;
 
     if (payload.stream) {
       const stream = streamWanasReply(payload);
       const iterator = stream[Symbol.asyncIterator]();
       const first = await iterator.next();
+      const encoder = new TextEncoder();
 
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache, no-transform');
-      res.setHeader('X-Accel-Buffering', 'no');
-      headersSentForStream = true;
+      const readable = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          try {
+            if (!first.done && first.value) {
+              controller.enqueue(encoder.encode(first.value));
+            }
+            while (true) {
+              const next = await iterator.next();
+              if (next.done) break;
+              if (next.value) {
+                controller.enqueue(encoder.encode(next.value));
+              }
+            }
+            controller.close();
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Stream interrupted';
+            controller.enqueue(encoder.encode(`\n\n[خطأ: ${msg}]`));
+            controller.close();
+          }
+        },
+      });
 
-      if (!first.done && first.value) {
-        res.write(first.value);
-      }
-
-      while (true) {
-        const next = await iterator.next();
-        if (next.done) break;
-        if (next.value) res.write(next.value);
-      }
-
-      return res.end();
+      return new Response(readable, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'X-Accel-Buffering': 'no',
+        },
+      });
     }
 
     const reply = await generateWanasReply(payload);
-    return sendJson(res, 200, { reply });
+    return jsonResponse({ reply }, 200);
   } catch (err: unknown) {
     const errorObj = err as { status?: number; message?: string };
     const statusCode =
@@ -73,11 +65,6 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
         : 500;
     const errMessage = errorObj?.message || 'Failed to generate response from Wanas AI.';
     console.error('Vercel /api/chat error:', errMessage);
-
-    if (headersSentForStream) {
-      res.write(`\n\n[خطأ: ${errMessage}]`);
-      return res.end();
-    }
-    return sendJson(res, statusCode, { error: errMessage });
+    return jsonResponse({ error: errMessage }, statusCode);
   }
 }

@@ -1,6 +1,7 @@
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
 const DEFAULT_MODEL = 'gemini-4-hydrogen';
+const FALLBACK_FREE_MODEL = 'gemini-3.1-flash-lite';
 
 export interface VitalSnapshot {
   bpm?: number;
@@ -34,7 +35,6 @@ export interface ChatRequestPayload {
   vitals?: VitalSnapshot | null;
   reportItems?: ReportItem[] | null;
   lang?: string;
-  stream?: boolean;
 }
 
 export function buildSystemInstruction(
@@ -43,45 +43,50 @@ export function buildSystemInstruction(
   reportItems?: ReportItem[] | null
 ): string {
   const vitalsBlock = vitals
-    ? JSON.stringify(vitals)
-    : 'No readings entered yet in Chest Belt.';
+    ? JSON.stringify(vitals, null, 2)
+    : 'No readings have been entered yet in the Chest Belt dashboard.';
 
   const reportBlock =
     reportItems && reportItems.length > 0
       ? reportItems.map((i) => `- [${i.level.toUpperCase()}] ${i.name}: ${i.msg}`).join('\n')
       : 'No generated report yet.';
 
-  return `You are "ونس" (Wanas), an empathetic, medically knowledgeable AI companion in the WANAS astronaut health ecosystem.
+  return `You are "ونس" (Wanas), an intelligent, empathetic, and medically knowledgeable AI companion built into the WANAS (ونس) deep-space astronaut health ecosystem.
 
-Duties:
-1. Interpret the astronaut's Chest Belt vital & environmental readings using the exact WANAS thresholds below.
-2. Give concise, practical medical, nutritional (healthy space eating), psychological, and operational advice.
-3. Prepare clear periodic health status reports for Earth Mission Control when internet is available.
+Your core duties:
+1. Monitor and interpret the astronaut's physiological and environmental readings entered in the WANAS Chest Belt dashboard.
+2. Give clear, practical medical, psychological, nutritional (healthy eating in space), and operational advice to help the astronaut reduce any detected health issues and handle real-world challenges during the mission.
+3. Prepare clear periodic health status reports to be transmitted to Earth Mission Control whenever internet connectivity is available.
+4. Answer all astronaut questions—whether health-related, psychological, nutritional, or practical day-to-day problem solving—warmly, concisely, and accurately.
 
-Exact WANAS Thresholds (Green=Normal | Yellow=Warning | Red=Emergency):
-- Heart Rate: 60–100 BPM | Warning 50–59 or 101–120 | Red <50 or >120
-- SpO2: 95–100% | Warning 90–94.9% | Red <90%
-- Respiration: 12–20 RPM | Warning 8–11 or 21–28 | Red <8 or >28
-- Temp: 36.5–37.5°C | Warning 35.5–36.4 or 37.6–38.5 | Red <35.5 or >38.5
-- Blood Pressure: ~120/80 (SYS 100–125 / DIA 65–85) | Red Low <90/60 or High >=160/100
-- Acceleration: 0–1 g | Warning 1.01–2 g | Red >2 g (fall/impact)
-- Cortisol: 10–20 μg/dL | Warning 7–9.9 or 20.1–26 | Red <7 or >26
-- Daily Caffeine: 100–200 mg | Warning <100 or 201–399 | Red >=400
-- Hydration: 2–2.5 L/day | Warning 1–1.9 or 2.6–5 | Red <1 (dehydration) or >5
-- Electrolytes: 135–145 mmol/L | Warning 130–134 or 146–150 | Red <130 or >150
-- CO2: <0.5% | Warning 0.5–0.6% | Red >0.6%
+Exact WANAS Reference Ranges (Green = Normal, Yellow = Warning, Red = Emergency):
+- Heart Rate (نبضات القلب): Normal 60–100 BPM | Warning 50–59 or 101–120 BPM | Emergency <50 or >120 BPM.
+- Oxygen Saturation SpO2 (تشبع الأكسجين): Normal 95%–100% | Warning 90%–94.9% | Emergency <90%.
+- Respiration Rate (معدل التنفس): Normal 12–20 RPM | Warning 8–11 or 21–28 RPM | Emergency <8 or >28 RPM.
+- Body Temperature (درجة الحرارة): Normal 36.5–37.5 °C | Warning 35.5–36.4 or 37.6–38.5 °C | Emergency <35.5 or >38.5 °C.
+- Blood Pressure (ضغط الدم): Normal around 120/80 (SYS 100–125 / DIA 65–85) | Warning outside normal bounds | Emergency Low (<90/60) or High (>=160/100).
+- Body Acceleration (التسارع الحركي): Normal 0–1 g | Warning 1.01–2 g | Emergency >2 g (indicates sudden impact or astronaut fall).
+- Cortisol (الكورتيزول): Normal 10–20 μg/dL | Warning 7–9.9 or 20.1–26 μg/dL | Emergency <7 or >26 μg/dL.
+- Daily Caffeine (الكافيين اليومي): Normal 100–200 mg | Warning >200–399 mg or <100 mg (too low) | Emergency >=400 mg (excessive).
+- Daily Water Intake / Hydration (شرب المياه): Normal 2–2.5 L/day | Warning 1–1.9 L or 2.6–5 L | Emergency <1 L (dehydration) or >5 L (excessive water intake).
+- Electrolytes (الأملاح): Normal 135–145 mmol/L | Warning 130–134 or 146–150 mmol/L | Emergency <130 or >150 mmol/L.
+- CO2 Level (نسبة ثاني أكسيد الكربون): Normal <0.5% | Warning 0.5%–0.6% | Emergency >0.6%.
 
-Current Readings: ${vitalsBlock}
-Evaluated Statuses:
+Current Astronaut Readings from WANAS Dashboard:
+${vitalsBlock}
+
+Latest Evaluated Statuses:
 ${reportBlock}
 
 Guidelines:
-- Respond in ${lang === 'en' ? 'English' : 'Arabic'} (match user language if different).
-- Use clean Markdown (### headings, **bold** key values/actions, bullet lists). Keep answers clear, direct, and concise unless detail is requested.
-- Never invent readings that were not provided.`;
+- Respond primarily in ${lang === 'en' ? 'English' : 'Arabic'} (unless the user writes in another language, then match their language naturally).
+- Format your responses using clean Markdown (use ### headings, **bold** highlights for key numbers and actions, and bullet/numbered lists) so the astronaut can scan advice quickly.
+- Be supportive, calm, structured, and practical.
+- Remind the astronaut gently when a reading is in the Yellow or Red zone and give concrete steps (breathing exercises, hydration/electrolyte balance, CO2 scrubber check, fall check, rest, or Earth control alert).
+- Never invent readings that were not provided; if readings are missing, mention that politely and invite them to enter values in the Chest Belt page or share them here.`;
 }
 
-function createChatSession(payload: ChatRequestPayload) {
+export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
   const rawKey = process.env.GEMINI_API_KEY ?? '';
   const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
@@ -101,7 +106,6 @@ function createChatSession(payload: ChatRequestPayload) {
   }
 
   const useVertexAi = process.env.USE_VERTEX_AI === 'true';
-  const modelName = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
 
   const ai = new GoogleGenAI({
     apiKey,
@@ -116,44 +120,64 @@ function createChatSession(payload: ChatRequestPayload) {
   const formattedHistory = Array.isArray(history)
     ? history
         .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
-        .slice(-10)
+        .slice(-16)
         .map((m) => ({
           role: m.role,
           parts: [{ text: m.text }],
         }))
     : [];
 
-  let thinkingConfig: Record<string, unknown> | undefined;
-  if (modelName.startsWith('gemini-4') || modelName.startsWith('gemini-3')) {
-    thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-  } else if (modelName.startsWith('gemini-2.5')) {
-    thinkingConfig = { thinkingBudget: 0 };
-  }
+  const systemInstruction = buildSystemInstruction(lang, vitals, reportItems);
+  const primaryModel = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
+  const modelsToTry =
+    primaryModel !== FALLBACK_FREE_MODEL ? [primaryModel, FALLBACK_FREE_MODEL] : [primaryModel];
 
-  const chat = ai.chats.create({
-    model: modelName,
-    config: {
-      systemInstruction: buildSystemInstruction(lang, vitals, reportItems),
-      ...(thinkingConfig ? { thinkingConfig } : {}),
-    },
-    history: formattedHistory,
-  });
+  let lastError: unknown = null;
 
-  return { chat, message: message.trim() };
-}
+  for (let i = 0; i < modelsToTry.length; i += 1) {
+    const model = modelsToTry[i];
+    try {
+      const chat = ai.chats.create({
+        model,
+        config: { systemInstruction },
+        history: formattedHistory,
+      });
 
-export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
-  const { chat, message } = createChatSession(payload);
-  const response = await chat.sendMessage({ message });
-  return (response.text ?? '').trim();
-}
+      const response = await chat.sendMessage({ message: message.trim() });
+      return (response.text ?? '').trim();
+    } catch (err: unknown) {
+      lastError = err;
+      const errObj = err as { status?: number; message?: string };
+      const msg = errObj?.message || '';
+      const isQuotaError =
+        errObj?.status === 429 ||
+        msg.includes('"code":429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.toLowerCase().includes('quota');
 
-export async function* streamWanasReply(payload: ChatRequestPayload): AsyncGenerator<string> {
-  const { chat, message } = createChatSession(payload);
-  const stream = await chat.sendMessageStream({ message });
-  for await (const chunk of stream) {
-    if (chunk.text) {
-      yield chunk.text;
+      if (isQuotaError && i < modelsToTry.length - 1) {
+        console.warn(`Model ${model} hit 429 quota limit, retrying with ${modelsToTry[i + 1]}...`);
+        continue;
+      }
+      break;
     }
   }
+
+  const errObj = lastError as { status?: number; message?: string };
+  const rawMsg = errObj?.message || 'Failed to generate response from Wanas AI.';
+  const isQuotaError =
+    errObj?.status === 429 ||
+    rawMsg.includes('"code":429') ||
+    rawMsg.includes('RESOURCE_EXHAUSTED') ||
+    rawMsg.toLowerCase().includes('quota');
+
+  if (isQuotaError) {
+    const friendly = new Error(
+      'تم تجاوز الحد المجاني اليومي لطلبات الذكاء الاصطناعي حالياً (429). يرجى المحاولة بعد قليل أو استخدام مفتاح API جديد / تفعيل الفوترة في Google AI Studio.'
+    ) as Error & { status?: number };
+    friendly.status = 429;
+    throw friendly;
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(rawMsg);
 }
