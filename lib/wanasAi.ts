@@ -86,7 +86,8 @@ Guidelines:
 }
 
 export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const rawKey = process.env.GEMINI_API_KEY ?? '';
+  const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
     const err = new Error('GEMINI_API_KEY is not configured. Please check environment variables.') as Error & {
       status?: number;
