@@ -47,7 +47,7 @@ async function startServer() {
           ? errorObj.status
           : 500;
       const errMessage = errorObj?.message || 'Failed to generate response from Wanas AI.';
-      console.error('Gemini /api/chat error:', errMessage);
+      console.error('/api/chat error:', errMessage);
 
       if (headersSentForStream) {
         res.write(`\n\n[خطأ: ${errMessage}]`);
