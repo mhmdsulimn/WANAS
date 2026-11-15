@@ -1,11 +1,10 @@
-import { GoogleGenAI } from '@google/genai';
-
-// Model IDs verified against the Gemini API docs (Nov 2026).
-// Override the first one with GEMINI_MODEL in the environment variables.
-// If a model is missing (404), overloaded (503) or out of quota (429),
-// the next one in the list is tried automatically.
-const DEFAULT_MODEL = 'gemini-3.8-flash';
-const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+// AI provider: OpenRouter (OpenAI-compatible API). No SDK needed, only fetch.
+// Environment variables (set them in Vercel -> Settings -> Environment Variables):
+//   OPENROUTER_API_KEY   (required)  your key from https://openrouter.ai/keys
+//   OPENROUTER_MODEL     (optional)  default: "openrouter/free" (auto-picks a free model)
+//   OPENROUTER_FALLBACK_MODELS (optional) comma-separated list tried if the first fails
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_MODEL = 'openrouter/free';
 
 export interface VitalSnapshot {
   bpm?: number;
@@ -99,62 +98,13 @@ function httpError(message: string, status: number): HttpError {
   return err;
 }
 
-function isQuotaError(err: unknown): boolean {
-  const e = err as { status?: number; message?: string };
-  const msg = e?.message || '';
-  return (
-    e?.status === 429 ||
-    msg.includes('"code":429') ||
-    msg.includes('RESOURCE_EXHAUSTED') ||
-    msg.toLowerCase().includes('quota')
-  );
-}
-
-// Errors where trying the next model in the list makes sense.
-function shouldTryNextModel(err: unknown): boolean {
-  const e = err as { status?: number; message?: string };
-  const msg = e?.message || '';
-  return (
-    isQuotaError(err) ||
-    e?.status === 404 ||
-    e?.status === 503 ||
-    e?.status === 500 ||
-    msg.includes('"code":404') ||
-    msg.includes('"code":503') ||
-    msg.includes('NOT_FOUND') ||
-    msg.includes('UNAVAILABLE') ||
-    msg.toLowerCase().includes('is not found')
-  );
-}
-
-function toFriendlyError(err: unknown): Error {
-  const e = err as { status?: number; message?: string };
-  const rawMsg = e?.message || 'Failed to generate response from Wanas AI.';
-
-  if (isQuotaError(err)) {
-    return httpError(
-      'تم تجاوز الحد المجاني اليومي لطلبات الذكاء الاصطناعي حالياً (429). يرجى المحاولة بعد قليل أو استخدام مفتاح API جديد / تفعيل الفوترة في Google AI Studio.',
-      429
-    );
-  }
-  if (
-    e?.status === 400 && /API key|API_KEY_INVALID/i.test(rawMsg) ||
-    e?.status === 401 ||
-    e?.status === 403
-  ) {
-    return httpError(
-      'مفتاح GEMINI_API_KEY غير صالح أو غير مسموح له. تأكد من المفتاح في إعدادات Vercel ثم اعمل Redeploy.',
-      e?.status && e.status >= 400 && e.status < 500 ? e.status : 400
-    );
-  }
-  return err instanceof Error ? (err as Error) : httpError(rawMsg, 500);
-}
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 function prepareRequest(payload: ChatRequestPayload) {
-  const rawKey = process.env.GEMINI_API_KEY ?? '';
+  const rawKey = process.env.OPENROUTER_API_KEY ?? '';
   const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
-    throw httpError('GEMINI_API_KEY is not configured. Please check environment variables.', 500);
+    throw httpError('OPENROUTER_API_KEY is not configured. Please check environment variables.', 500);
   }
 
   const { message, history = [], vitals = null, reportItems = null, lang = 'ar' } = payload;
@@ -163,103 +113,164 @@ function prepareRequest(payload: ChatRequestPayload) {
     throw httpError('Message is required.', 400);
   }
 
-  const useVertexAi = process.env.USE_VERTEX_AI === 'true';
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    ...(useVertexAi ? { vertexai: true } : {}),
-  });
-
-  // Gemini requires the history to start with a "user" turn and to alternate roles.
-  // The welcome message is never sent to the server, but we sanitize anyway.
   const cleaned = Array.isArray(history)
     ? history
         .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
         .slice(-16)
     : [];
-  while (cleaned.length > 0 && cleaned[0].role !== 'user') cleaned.shift();
 
-  const formattedHistory = cleaned.map((m) => ({
-    role: m.role,
-    parts: [{ text: m.text }],
-  }));
+  const messages: ChatMessage[] = [
+    { role: 'system', content: buildSystemInstruction(lang, vitals, reportItems) },
+    ...cleaned.map((m) => ({
+      role: (m.role === 'model' ? 'assistant' : 'user') as 'assistant' | 'user',
+      content: m.text,
+    })),
+    { role: 'user', content: message.trim() },
+  ];
 
-  const primaryModel = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
-  const modelsToTry = [primaryModel, ...FALLBACK_MODELS.filter((m) => m !== primaryModel)];
+  const primary = (process.env.OPENROUTER_MODEL || DEFAULT_MODEL).trim();
+  const extra = (process.env.OPENROUTER_FALLBACK_MODELS || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  const modelsToTry = [primary, ...extra.filter((m) => m !== primary)];
 
-  return {
-    ai,
-    message: message.trim(),
-    formattedHistory,
-    systemInstruction: buildSystemInstruction(lang, vitals, reportItems),
-    modelsToTry,
-  };
+  return { apiKey, messages, modelsToTry };
+}
+
+async function friendlyHttpError(res: Response): Promise<HttpError> {
+  let detail = '';
+  try {
+    const data = (await res.json()) as { error?: { message?: string } };
+    detail = data?.error?.message || '';
+  } catch {
+    /* ignore */
+  }
+  console.error(`OpenRouter HTTP ${res.status}:`, detail);
+
+  if (res.status === 401 || res.status === 403) {
+    return httpError(
+      'مفتاح OPENROUTER_API_KEY غير صالح أو تم إيقافه. أنشئ مفتاحاً جديداً من openrouter.ai/keys وحدّثه في إعدادات Vercel ثم اعمل Redeploy.',
+      res.status
+    );
+  }
+  if (res.status === 402) {
+    return httpError('رصيد OpenRouter غير كافٍ لهذا الموديل. استخدم موديلاً مجانياً (openrouter/free) أو اشحن الرصيد.', 402);
+  }
+  if (res.status === 429) {
+    return httpError('تم الوصول للحد المسموح من الطلبات حالياً (429). يرجى المحاولة بعد قليل.', 429);
+  }
+  return httpError(detail || `OpenRouter request failed (${res.status}).`, res.status >= 400 ? res.status : 500);
+}
+
+function shouldTryNextModel(err: unknown): boolean {
+  const status = (err as HttpError)?.status;
+  return status === 404 || status === 408 || status === 429 || status === 502 || status === 503 || status === 500;
+}
+
+function openRouterFetch(apiKey: string, model: string, messages: ChatMessage[], stream: boolean) {
+  return fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.APP_URL || 'https://wanas-team.vercel.app',
+      'X-Title': 'WANAS',
+    },
+    body: JSON.stringify({ model, messages, stream, max_tokens: 1500 }),
+  });
 }
 
 export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
-  const { ai, message, formattedHistory, systemInstruction, modelsToTry } = prepareRequest(payload);
-
+  const { apiKey, messages, modelsToTry } = prepareRequest(payload);
   let lastError: unknown = null;
 
   for (let i = 0; i < modelsToTry.length; i += 1) {
-    const model = modelsToTry[i];
     try {
-      const chat = ai.chats.create({
-        model,
-        config: { systemInstruction },
-        history: formattedHistory,
-      });
-      const response = await chat.sendMessage({ message });
-      return (response.text ?? '').trim();
-    } catch (err: unknown) {
+      const res = await openRouterFetch(apiKey, modelsToTry[i], messages, false);
+      if (!res.ok) throw await friendlyHttpError(res);
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        error?: { message?: string };
+      };
+      if (data.error) throw httpError(data.error.message || 'Model error', 502);
+      const text = (data.choices?.[0]?.message?.content ?? '').trim();
+      if (!text) throw httpError('وصل رد فارغ من الموديل، حاول مرة أخرى.', 502);
+      return text;
+    } catch (err) {
       lastError = err;
-      console.error(`Model ${model} failed:`, (err as Error)?.message);
+      console.error(`Model ${modelsToTry[i]} failed:`, (err as Error)?.message);
       if (i < modelsToTry.length - 1 && shouldTryNextModel(err)) continue;
       break;
     }
   }
-
-  throw toFriendlyError(lastError);
+  throw lastError instanceof Error ? lastError : httpError('Failed to generate response.', 500);
 }
 
 /**
- * Streams the reply as plain text chunks.
- * Falling back to the next model is only possible BEFORE the first chunk is sent,
- * so errors that happen before any output are thrown to the caller
- * (which turns them into a proper HTTP error status).
+ * Streams the reply as plain text chunks (parsed from OpenRouter's SSE stream).
+ * Errors before the first chunk are thrown, so the API route can return a proper HTTP status.
  */
 export async function* streamWanasReply(payload: ChatRequestPayload): AsyncGenerator<string, void, unknown> {
-  const { ai, message, formattedHistory, systemInstruction, modelsToTry } = prepareRequest(payload);
-
+  const { apiKey, messages, modelsToTry } = prepareRequest(payload);
   let lastError: unknown = null;
 
   for (let i = 0; i < modelsToTry.length; i += 1) {
     const model = modelsToTry[i];
     let started = false;
     try {
-      const chat = ai.chats.create({
-        model,
-        config: { systemInstruction },
-        history: formattedHistory,
-      });
-      const stream = await chat.sendMessageStream({ message });
+      const res = await openRouterFetch(apiKey, model, messages, true);
+      if (!res.ok) throw await friendlyHttpError(res);
+      if (!res.body) throw httpError('OpenRouter returned an empty stream.', 502);
 
-      for await (const chunk of stream) {
-        const text = chunk.text;
-        if (text) {
-          started = true;
-          yield text;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          // Lines starting with ":" are SSE comments (e.g. ": OPENROUTER PROCESSING")
+          if (!line || line.startsWith(':') || !line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') continue;
+
+          let json: {
+            error?: { message?: string };
+            choices?: { delta?: { content?: string | null } }[];
+          };
+          try {
+            json = JSON.parse(data);
+          } catch {
+            continue;
+          }
+
+          if (json.error) throw httpError(json.error.message || 'Model stream error', 502);
+
+          const text = json.choices?.[0]?.delta?.content;
+          if (text) {
+            started = true;
+            yield text;
+          }
         }
       }
+
+      if (!started) throw httpError('وصل رد فارغ من الموديل، حاول مرة أخرى.', 502);
       return;
-    } catch (err: unknown) {
+    } catch (err) {
       lastError = err;
       console.error(`Model ${model} stream failed:`, (err as Error)?.message);
-      // If we already sent text to the user, we cannot silently switch models.
       if (!started && i < modelsToTry.length - 1 && shouldTryNextModel(err)) continue;
       break;
     }
   }
 
-  throw toFriendlyError(lastError);
+  throw lastError instanceof Error ? lastError : httpError('Failed to generate response.', 500);
 }
