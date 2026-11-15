@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
 const DEFAULT_MODEL = 'gemini-4-hydrogen';
 
@@ -34,6 +34,29 @@ export interface ChatRequestPayload {
   vitals?: VitalSnapshot | null;
   reportItems?: ReportItem[] | null;
   lang?: string;
+  stream?: boolean;
+}
+
+let cachedClientKey = '';
+let cachedAiClient: GoogleGenAI | null = null;
+
+function getAiClient(apiKey: string, useVertexAi: boolean): GoogleGenAI {
+  const cacheKey = `${apiKey}:${useVertexAi}`;
+  if (cachedAiClient && cachedClientKey === cacheKey) {
+    return cachedAiClient;
+  }
+
+  cachedClientKey = cacheKey;
+  cachedAiClient = new GoogleGenAI({
+    apiKey,
+    ...(useVertexAi ? { vertexai: true } : {}),
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+  return cachedAiClient;
 }
 
 export function buildSystemInstruction(
@@ -42,50 +65,30 @@ export function buildSystemInstruction(
   reportItems?: ReportItem[] | null
 ): string {
   const vitalsBlock = vitals
-    ? JSON.stringify(vitals, null, 2)
-    : 'No readings have been entered yet in the Chest Belt dashboard.';
+    ? JSON.stringify(vitals)
+    : 'None entered yet.';
 
   const reportBlock =
     reportItems && reportItems.length > 0
-      ? reportItems.map((i) => `- [${i.level.toUpperCase()}] ${i.name}: ${i.msg}`).join('\n')
-      : 'No generated report yet.';
+      ? reportItems.map((i) => `${i.name}(${i.level}): ${i.msg}`).join(' | ')
+      : 'None yet.';
 
-  return `You are "ونس" (Wanas), an intelligent, empathetic, and medically knowledgeable AI companion built into the WANAS (ونس) deep-space astronaut health ecosystem.
+  return `You are "ونس" (Wanas), a fast, supportive AI health & mission companion for astronauts in WANAS.
 
-Your core duties:
-1. Monitor and interpret the astronaut's physiological and environmental readings entered in the WANAS Chest Belt dashboard.
-2. Give clear, practical medical, psychological, nutritional (healthy eating in space), and operational advice to help the astronaut reduce any detected health issues and handle real-world challenges during the mission.
-3. Prepare clear periodic health status reports to be transmitted to Earth Mission Control whenever internet connectivity is available.
-4. Answer all astronaut questions—whether health-related, psychological, nutritional, or practical day-to-day problem solving—warmly, concisely, and accurately.
+WANAS Ranges (Green=Normal | Yellow=Warning | Red=Emergency):
+HR 60-100 (Warn 50-59/101-120, Red <50/>120) | SpO2 95-100% (Warn 90-94.9%, Red <90%) | Resp 12-20 (Warn 8-11/21-28, Red <8/>28) | Temp 36.5-37.5°C (Warn 35.5-36.4/37.6-38.5, Red <35.5/>38.5) | BP ~120/80 (Red <90/60 or >=160/100) | Accel 0-1g (Warn 1.01-2g, Red >2g fall) | Cortisol 10-20 (Warn 7-9.9/20.1-26, Red <7/>26) | Caffeine 100-200mg (Warn <100/201-399, Red >=400) | Water 2-2.5L (Warn 1-1.9/2.6-5, Red <1/>5) | Electrolytes 135-145 (Warn 130-134/146-150, Red <130/>150) | CO2 <0.5% (Warn 0.5-0.6%, Red >0.6%).
 
-Exact WANAS Reference Ranges (Green = Normal, Yellow = Warning, Red = Emergency):
-- Heart Rate (نبضات القلب): Normal 60–100 BPM | Warning 50–59 or 101–120 BPM | Emergency <50 or >120 BPM.
-- Oxygen Saturation SpO2 (تشبع الأكسجين): Normal 95%–100% | Warning 90%–94.9% | Emergency <90%.
-- Respiration Rate (معدل التنفس): Normal 12–20 RPM | Warning 8–11 or 21–28 RPM | Emergency <8 or >28 RPM.
-- Body Temperature (درجة الحرارة): Normal 36.5–37.5 °C | Warning 35.5–36.4 or 37.6–38.5 °C | Emergency <35.5 or >38.5 °C.
-- Blood Pressure (ضغط الدم): Normal around 120/80 (SYS 100–125 / DIA 65–85) | Warning outside normal bounds | Emergency Low (<90/60) or High (>=160/100).
-- Body Acceleration (التسارع الحركي): Normal 0–1 g | Warning 1.01–2 g | Emergency >2 g (indicates sudden impact or astronaut fall).
-- Cortisol (الكورتيزول): Normal 10–20 μg/dL | Warning 7–9.9 or 20.1–26 μg/dL | Emergency <7 or >26 μg/dL.
-- Daily Caffeine (الكافيين اليومي): Normal 100–200 mg | Warning >200–399 mg or <100 mg (too low) | Emergency >=400 mg (excessive).
-- Daily Water Intake / Hydration (شرب المياه): Normal 2–2.5 L/day | Warning 1–1.9 L or 2.6–5 L | Emergency <1 L (dehydration) or >5 L (excessive water intake).
-- Electrolytes (الأملاح): Normal 135–145 mmol/L | Warning 130–134 or 146–150 mmol/L | Emergency <130 or >150 mmol/L.
-- CO2 Level (نسبة ثاني أكسيد الكربون): Normal <0.5% | Warning 0.5%–0.6% | Emergency >0.6%.
+Live Readings: ${vitalsBlock}
+Status: ${reportBlock}
 
-Current Astronaut Readings from WANAS Dashboard:
-${vitalsBlock}
-
-Latest Evaluated Statuses:
-${reportBlock}
-
-Guidelines:
-- Respond primarily in ${lang === 'en' ? 'English' : 'Arabic'} (unless the user writes in another language, then match their language naturally).
-- Format your responses using clean Markdown (use ### headings, **bold** highlights for key numbers and actions, and bullet/numbered lists) so the astronaut can scan advice quickly.
-- Be supportive, calm, structured, and practical.
-- Remind the astronaut gently when a reading is in the Yellow or Red zone and give concrete steps (breathing exercises, hydration/electrolyte balance, CO2 scrubber check, fall check, rest, or Earth control alert).
-- Never invent readings that were not provided; if readings are missing, mention that politely and invite them to enter values in the Chest Belt page or share them here.`;
+Rules:
+- Reply in ${lang === 'en' ? 'English' : 'Arabic'} (match user's language if different).
+- Be fast, direct, and concise: 3 to 6 short bullet points or brief sentences by default (only write longer sections when asked for a full report or meal plan).
+- Format cleanly with Markdown (**bold**, bullet lists, short ### heading if helpful).
+- Give practical health, nutrition, psychological, or operational steps for any Yellow/Red values, and never invent missing readings.`;
 }
 
-export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
+function createChatSession(payload: ChatRequestPayload) {
   const rawKey = process.env.GEMINI_API_KEY ?? '';
   const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
@@ -105,35 +108,52 @@ export async function generateWanasReply(payload: ChatRequestPayload): Promise<s
   }
 
   const useVertexAi = process.env.USE_VERTEX_AI === 'true';
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    ...(useVertexAi ? { vertexai: true } : {}),
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+  const modelName = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
+  const ai = getAiClient(apiKey, useVertexAi);
 
   const formattedHistory = Array.isArray(history)
     ? history
         .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
-        .slice(-16)
+        .slice(-8)
         .map((m) => ({
           role: m.role,
           parts: [{ text: m.text }],
         }))
     : [];
 
+  let thinkingConfig: Record<string, unknown> | undefined;
+  if (modelName === 'gemini-3.1-flash-lite') {
+    thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+  } else if (modelName.startsWith('gemini-4') || modelName.startsWith('gemini-3')) {
+    thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+  } else if (modelName.startsWith('gemini-2.5')) {
+    thinkingConfig = { thinkingBudget: 0 };
+  }
+
   const chat = ai.chats.create({
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    model: modelName,
     config: {
       systemInstruction: buildSystemInstruction(lang, vitals, reportItems),
+      ...(thinkingConfig ? { thinkingConfig } : {}),
     },
     history: formattedHistory,
   });
 
-  const response = await chat.sendMessage({ message: message.trim() });
+  return { chat, message: message.trim() };
+}
+
+export async function generateWanasReply(payload: ChatRequestPayload): Promise<string> {
+  const { chat, message } = createChatSession(payload);
+  const response = await chat.sendMessage({ message });
   return (response.text ?? '').trim();
+}
+
+export async function* streamWanasReply(payload: ChatRequestPayload): AsyncGenerator<string> {
+  const { chat, message } = createChatSession(payload);
+  const stream = await chat.sendMessageStream({ message });
+  for await (const chunk of stream) {
+    if (chunk.text) {
+      yield chunk.text;
+    }
+  }
 }

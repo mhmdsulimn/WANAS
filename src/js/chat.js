@@ -429,32 +429,88 @@ async function sendMessage(text, isEarthReport = false) {
   const thinkingRow = appendMessage('model', TEXT.ar.chat.thinking);
   const thinkingBubble = thinkingRow.querySelector('.msg-bubble');
 
+  const container = el('chat-messages');
+
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: trimmed,
-        history: chatState.history,
+        history: chatState.history.slice(-10),
         vitals: chatState.vitals,
         reportItems: chatState.reportItems,
         lang: chatState.lang,
+        stream: true,
       }),
     });
 
-    const data = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+
     if (!res.ok) {
-      throw new Error(data.error || 'تعذر الاتصال بمساعد ونس');
+      let errMsg = 'تعذر الاتصال بمساعد ونس';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        errMsg = data.error || errMsg;
+      } else {
+        errMsg = (await res.text()) || errMsg;
+      }
+      throw new Error(errMsg);
     }
 
-    let replyText = data.reply || '';
-    if (isEarthReport) {
-      const note = navigator.onLine ? TEXT.ar.chat.reportSentNote : TEXT.ar.chat.reportQueuedNote;
-      replyText = `${replyText}\n\n---\n**حالة الإرسال للقاعدة:** ${note}`;
-    }
+    let replyText = '';
 
-    thinkingBubble.classList.add('md-content');
-    typeMarkdownMessage(thinkingBubble, replyText);
+    if (res.body && !contentType.includes('application/json')) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      thinkingBubble.classList.add('md-content');
+
+      let renderScheduled = false;
+      const paintStream = (done = false) => {
+        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+        thinkingBubble.innerHTML = markdownToHtml(replyText);
+        if (!done) {
+          placeTypingCursor(thinkingBubble);
+        }
+        if (nearBottom) {
+          container.scrollTop = container.scrollHeight;
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk) {
+          replyText += chunk;
+          if (!renderScheduled) {
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+              renderScheduled = false;
+              paintStream(false);
+            });
+          }
+        }
+      }
+
+      replyText += decoder.decode();
+
+      if (isEarthReport) {
+        const note = navigator.onLine ? TEXT.ar.chat.reportSentNote : TEXT.ar.chat.reportQueuedNote;
+        replyText = `${replyText}\n\n---\n**حالة الإرسال للقاعدة:** ${note}`;
+      }
+
+      paintStream(true);
+    } else {
+      const data = await res.json();
+      replyText = data.reply || '';
+      if (isEarthReport) {
+        const note = navigator.onLine ? TEXT.ar.chat.reportSentNote : TEXT.ar.chat.reportQueuedNote;
+        replyText = `${replyText}\n\n---\n**حالة الإرسال للقاعدة:** ${note}`;
+      }
+      thinkingBubble.classList.add('md-content');
+      typeMarkdownMessage(thinkingBubble, replyText);
+    }
 
     chatState.history.push({ role: 'user', text: trimmed });
     chatState.history.push({ role: 'model', text: replyText });
@@ -465,7 +521,7 @@ async function sendMessage(text, isEarthReport = false) {
     chatState.sending = false;
     el('chat-send-btn').disabled = false;
     el('btn-send-earth-report').disabled = false;
-    el('chat-messages').scrollTop = el('chat-messages').scrollHeight;
+    container.scrollTop = container.scrollHeight;
   }
 }
 

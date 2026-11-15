@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import path from 'path';
 import express from 'express';
-import { generateWanasReply, type ChatRequestPayload } from './lib/wanasAi.ts';
+import { generateWanasReply, streamWanasReply, type ChatRequestPayload } from './lib/wanasAi.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -10,8 +10,35 @@ async function startServer() {
   app.use(express.json());
 
   app.post('/api/chat', async (req, res) => {
+    let headersSentForStream = false;
     try {
-      const reply = await generateWanasReply((req.body || {}) as ChatRequestPayload);
+      const payload = (req.body || {}) as ChatRequestPayload;
+
+      if (payload.stream) {
+        const stream = streamWanasReply(payload);
+        const iterator = stream[Symbol.asyncIterator]();
+        const first = await iterator.next();
+
+        res.status(200);
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('X-Accel-Buffering', 'no');
+        headersSentForStream = true;
+
+        if (!first.done && first.value) {
+          res.write(first.value);
+        }
+
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) break;
+          if (next.value) res.write(next.value);
+        }
+
+        return res.end();
+      }
+
+      const reply = await generateWanasReply(payload);
       return res.json({ reply });
     } catch (err: unknown) {
       const errorObj = err as { status?: number; message?: string };
@@ -21,6 +48,11 @@ async function startServer() {
           : 500;
       const errMessage = errorObj?.message || 'Failed to generate response from Wanas AI.';
       console.error('Gemini /api/chat error:', errMessage);
+
+      if (headersSentForStream) {
+        res.write(`\n\n[خطأ: ${errMessage}]`);
+        return res.end();
+      }
       return res.status(statusCode).json({ error: errMessage });
     }
   });
