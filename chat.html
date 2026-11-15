@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>المساعد ونس (Wanas AI) | WANAS</title>
+    <meta name="description" content="Wanas AI Assistant for real-time astronaut vital monitoring, health advice, nutrition guidance, and Earth Control reporting." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/css/style.css" />
+  </head>
+  <body>
+    <canvas id="space-canvas"></canvas>
+
+    <!-- Navbar -->
+    <nav id="navbar" class="navbar scrolled">
+      <div class="nav-container">
+        <a href="/index.html" class="brand">
+          <span class="brand-main" data-i18n="brand">ونس</span>
+          <span class="brand-tag" data-i18n="brandTag">(WANAS)</span>
+        </a>
+
+        <div class="nav-links">
+          <a href="/index.html#hero" class="nav-link">الرئيسية</a>
+          <a href="/index.html#belt" class="nav-link">حزام الصدر</a>
+          <a href="/index.html#helmet" class="nav-link">شاشة الخوذة</a>
+          <a href="/index.html#joints" class="nav-link">المفاصل الذكية</a>
+        </div>
+
+        <div class="nav-actions">
+          <a href="/chat.html" class="btn-bot-nav active" title="المساعد الذكي ونس" aria-label="المساعد الذكي ونس">
+            <svg class="bot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 8V4H8" />
+              <rect width="16" height="12" x="4" y="8" rx="3" />
+              <path d="M2 14h2" />
+              <path d="M20 14h2" />
+              <path d="M9 13v2" />
+              <path d="M15 13v2" />
+            </svg>
+            <span class="bot-label">المساعد ونس</span>
+          </a>
+          <button id="menu-toggle" type="button" class="menu-btn" aria-label="Menu">☰</button>
+        </div>
+      </div>
+
+      <div id="mobile-menu" class="mobile-dropdown hidden">
+        <a href="/index.html#hero" class="nav-link">الرئيسية</a>
+        <a href="/index.html#belt" class="nav-link">حزام الصدر</a>
+        <a href="/index.html#helmet" class="nav-link">شاشة الخوذة</a>
+        <a href="/index.html#joints" class="nav-link">المفاصل الذكية</a>
+        <a href="/chat.html" class="nav-link nav-chat-link active">
+          <svg class="bot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 8V4H8" />
+            <rect width="16" height="12" x="4" y="8" rx="3" />
+            <path d="M2 14h2" />
+            <path d="M20 14h2" />
+            <path d="M9 13v2" />
+            <path d="M15 13v2" />
+          </svg>
+          <span>المساعد ونس</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-page">
+      <div class="container chat-console">
+        <!-- Sidebar: Mission Briefing, Earth Link & Live Vitals -->
+        <aside class="chat-sidebar">
+          <div class="card chat-header-card">
+            <div class="chat-header-top">
+              <h1 data-i18n="chat.title">المساعد الذكي «ونس» (Wanas AI)</h1>
+              <span id="earth-link-badge" class="earth-status">
+                <span class="dot green"></span>
+                <span id="earth-link-text" data-i18n="chat.online">متصل بالإنترنت — جاهز لإرسال تقارير القاعدة</span>
+              </span>
+            </div>
+
+            <p class="report-text" data-i18n="chat.subtitle">
+              يراقب بياناتك الصحية، يجيب على أسئلتك، ويقدم نصائح طبية وغذائية ونفسية وعملية، كما يجهز تقارير دورية للقاعدة الأرضية عند توفر الإنترنت.
+            </p>
+
+            <div class="chat-actions-col">
+              <button id="btn-send-earth-report" type="button" class="btn btn-primary" data-i18n="chat.btnEarthReport">
+                إرسال تقرير دوري للقاعدة
+              </button>
+              <a href="/index.html#belt" class="btn btn-neutral" data-i18n="chat.editVitals">
+                تعديل القيم في حزام الصدر
+              </a>
+            </div>
+          </div>
+
+          <!-- Synced Vital Readings from Chest Belt -->
+          <div class="card chat-vitals-card">
+            <h2 class="vitals-panel-title" data-i18n="chat.vitalsTitle">المؤشرات الحيوية المتزامنة</h2>
+            <div id="chat-vitals-strip" class="vitals-strip"></div>
+          </div>
+        </aside>
+
+        <!-- Main Chat Stage -->
+        <section class="card chat-box">
+          <div class="chat-prompts-bar">
+            <div class="quick-prompts">
+              <button type="button" class="quick-btn" data-prompt-key="q1" data-i18n="chat.q1">حلل بياناتي الصحية الآن</button>
+              <button type="button" class="quick-btn" data-prompt-key="q2" data-i18n="chat.q2">كيف أتعامل مع المشاكل الصحية الظاهرة؟</button>
+              <button type="button" class="quick-btn" data-prompt-key="q3" data-i18n="chat.q3">اقترح لي نظام أكل صحي في الفضاء</button>
+              <button type="button" class="quick-btn" data-prompt-key="q4" data-i18n="chat.q4">أشعر بتوتر وضغط نفسي في المهمة</button>
+              <button type="button" class="quick-btn" data-prompt-key="q5" data-i18n="chat.q5">ساعدني في مشكلة عملية أثناء العمل</button>
+            </div>
+          </div>
+
+          <div id="chat-messages" class="chat-messages"></div>
+
+          <form id="chat-form" class="chat-form">
+            <input
+              id="chat-input"
+              type="text"
+              class="chat-input"
+              placeholder="اكتب سؤالك أو مشكلتك الصحية أو العملية لونس..."
+              autocomplete="off"
+              required
+            />
+            <button id="chat-send-btn" type="submit" class="btn btn-primary" data-i18n="chat.sendBtn">
+              إرسال
+            </button>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-copy">Copyright @WANAS Team</div>
+        <p class="footer-note" data-i18n="footerRights">مشروع ونس (WANAS) — تحدي ناسا لتطبيقات الفضاء</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/js/chat.js"></script>
+  </body>
+</html>

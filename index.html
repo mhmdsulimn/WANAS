@@ -3,20 +3,348 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WENAS (ونس) | NASA Space Apps Project</title>
-    <meta name="description" content="WENAS (ونس) - Autonomous physiological and psychological companion ecosystem for deep-space astronaut health." />
-    <meta property="og:title" content="WENAS (ونس) | NASA Space Apps" />
+    <title>WANAS (ونس) | NASA Space Apps Project</title>
+    <meta name="description" content="WANAS (ونس) - Autonomous physiological and psychological companion ecosystem for deep-space astronaut health." />
+    <meta property="og:title" content="WANAS (ونس) | NASA Space Apps" />
     <meta property="og:description" content="Autonomous physiological and psychological companion ecosystem for deep-space astronaut health." />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://sketchfab.com">
-    <link rel="dns-prefetch" href="https://sketchfab.com">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://sketchfab.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/css/style.css" />
   </head>
-  <body class="bg-[#030712] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body>
+    <!-- 1. Space Starfield Background -->
+    <canvas id="space-canvas"></canvas>
+
+    <!-- 2. Navbar -->
+    <nav id="navbar" class="navbar">
+      <div class="nav-container">
+        <button type="button" class="brand" data-scroll="hero">
+          <span class="brand-main" data-i18n="brand">ونس</span>
+          <span class="brand-tag" data-i18n="brandTag">(WANAS)</span>
+        </button>
+
+        <div class="nav-links">
+          <button type="button" class="nav-link" data-scroll="hero">الرئيسية</button>
+          <button type="button" class="nav-link" data-scroll="belt">حزام الصدر</button>
+          <button type="button" class="nav-link" data-scroll="helmet">شاشة الخوذة</button>
+          <button type="button" class="nav-link" data-scroll="joints">المفاصل الذكية</button>
+        </div>
+
+        <div class="nav-actions">
+          <a href="/chat.html" class="btn-bot-nav" title="المساعد الذكي ونس" aria-label="المساعد الذكي ونس">
+            <svg class="bot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 8V4H8" />
+              <rect width="16" height="12" x="4" y="8" rx="3" />
+              <path d="M2 14h2" />
+              <path d="M20 14h2" />
+              <path d="M9 13v2" />
+              <path d="M15 13v2" />
+            </svg>
+            <span class="bot-label">المساعد ونس</span>
+          </a>
+          <button id="menu-toggle" type="button" class="menu-btn" aria-label="Menu">☰</button>
+        </div>
+      </div>
+
+      <!-- Mobile Dropdown Menu -->
+      <div id="mobile-menu" class="mobile-dropdown hidden">
+        <button type="button" class="nav-link" data-scroll="hero">الرئيسية</button>
+        <button type="button" class="nav-link" data-scroll="belt">حزام الصدر</button>
+        <button type="button" class="nav-link" data-scroll="helmet">شاشة الخوذة</button>
+        <button type="button" class="nav-link" data-scroll="joints">المفاصل الذكية</button>
+        <a href="/chat.html" class="nav-link nav-chat-link">
+          <svg class="bot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 8V4H8" />
+            <rect width="16" height="12" x="4" y="8" rx="3" />
+            <path d="M2 14h2" />
+            <path d="M20 14h2" />
+            <path d="M9 13v2" />
+            <path d="M15 13v2" />
+          </svg>
+          <span>المساعد ونس</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- 4. Hero Section -->
+    <section id="hero" class="section section-hero">
+      <div class="container grid-2">
+        <div class="reveal">
+          <h1 class="hero-title">WANAS <span>(ونس)</span></h1>
+          <p class="hero-tagline" data-i18n="hero.tagline">منظومة ذكية متكاملة لمراقبة صحة رائد الفضاء ودعمه بالذكاء الاصطناعي</p>
+          <p class="lead-text" data-i18n="hero.desc">
+            يجمع مشروع ونس (WANAS) بين حزام الصدر لمراقبة المؤشرات الحيوية، وشاشة الخوذة لعرض التقرير الصحي بالألوان، والمفاصل الذكية للتمارين وتوليد الكهرباء ومساج العضلات، بالإضافة إلى مساعد ذكاء اصطناعي («ونس») يحلل بيانات الرائد، يرسل تقارير دورية للقاعدة عند توفر الإنترنت، ويتحدث معه ويقدم له نصائح للتعامل مع المشاكل الصحية.
+          </p>
+
+          <div class="grid-3" style="margin-bottom: 24px;">
+            <div class="card mini-card">
+              <h4 data-i18n="hero.f1Title">حزام الصدر</h4>
+              <p data-i18n="hero.f1Desc">رصد نبض القلب، الأكسجين، التنفس، الحرارة، الضغط، التسارع، والكربون</p>
+            </div>
+            <div class="card mini-card">
+              <h4 data-i18n="hero.f2Title">شاشة الخوذة</h4>
+              <p data-i18n="hero.f2Desc">عرض التحليل الصحي فورياً بالألوان (أخضر، أصفر، أحمر) أمام الرائد</p>
+            </div>
+            <div class="card mini-card">
+              <h4 data-i18n="hero.f3Title">المفاصل الذكية</h4>
+              <p data-i18n="hero.f3Desc">تساعد في التمارين اليومية، توليد الكهرباء للبدلة، ومساج العضلات</p>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary" data-scroll="belt" data-i18n="hero.btn">استكشف المنظومة</button>
+        </div>
+
+        <!-- Astronaut 3D Model -->
+        <div class="model-box hero-model-box reveal">
+          <iframe
+            title="Astronaut"
+            src="https://sketchfab.com/models/f176f4f0408d4034b4d3ef62f05b2332/embed?autostart=1&preload=1&ui_theme=dark&transparent=1&ui_infos=0&ui_watermark=0&ui_controls=0&ui_general_controls=0&ui_fullscreen=0&ui_ar=0&ui_vr=0&ui_help=0&ui_settings=0&ui_inspector=0&ui_annotations=0&ui_hint=0"
+            class="model-iframe"
+            allow="autoplay; fullscreen; xr-spatial-tracking"
+            allowfullscreen
+            loading="eager"
+          ></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Chest Belt Section -->
+    <section id="belt" class="section section-divider">
+      <div class="container">
+        <div class="section-heading reveal">
+          <h2 data-i18n="belt.title">حزام الصدر (Astro-EMS)</h2>
+          <p data-i18n="belt.desc">يراقب نبضات القلب (ECG)، الأكسجين، التنفس، وحرارة الجسم لاكتشاف أي خطر فسيولوجي حقيقي.</p>
+        </div>
+
+        <div class="grid-dashboard">
+          <div class="model-box reveal">
+            <iframe
+              title="Belt1"
+              src="https://sketchfab.com/models/1d319caef00c4f90bc5869ef6dc3f352/embed?autostart=1&preload=1&ui_theme=dark&transparent=1&ui_infos=0&ui_watermark=0&ui_controls=0&ui_general_controls=0&ui_fullscreen=0&ui_ar=0&ui_vr=0&ui_help=0&ui_settings=0&ui_inspector=0&ui_annotations=0&ui_hint=0"
+              class="model-iframe"
+              allow="autoplay; fullscreen; xr-spatial-tracking"
+              allowfullscreen
+              loading="eager"
+            ></iframe>
+          </div>
+
+          <div class="dashboard-col reveal">
+            <!-- ECG Graph + Heart Rate Input -->
+            <div class="card">
+              <div class="ecg-top">
+                <strong data-i18n="belt.ecgTitle">مخطط نبضات القلب (ECG)</strong>
+                <div class="ecg-bpm">
+                  <input id="input-bpm" type="number" class="vital-input vital-input-bpm" min="20" max="240" step="1" placeholder="78" />
+                  <small>BPM</small>
+                </div>
+              </div>
+              <canvas id="ecg-canvas" width="480" height="110"></canvas>
+              <div class="range-hint" data-i18n="belt.hrHint">المعدل الطبيعي: 60 - 100 نبضة/دقيقة</div>
+            </div>
+
+            <!-- 10 Vital & Biomarker Inputs (5x2 Grid) -->
+            <div class="grid-inputs">
+              <div class="card">
+                <label class="metric-label" for="input-spo2" data-i18n="belt.spo2">تشبع الأكسجين</label>
+                <div class="input-row">
+                  <input id="input-spo2" type="number" class="vital-input" min="50" max="100" step="0.1" placeholder="98" />
+                  <span class="unit-tag">%</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.spo2Hint">الطبيعي: 95% - 100%</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-resp" data-i18n="belt.resp">معدل التنفس</label>
+                <div class="input-row">
+                  <input id="input-resp" type="number" class="vital-input" min="2" max="60" step="1" placeholder="16" />
+                  <span class="unit-tag">RPM</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.respHint">الطبيعي: 12 - 20</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-temp" data-i18n="belt.temp">درجة الحرارة</label>
+                <div class="input-row">
+                  <input id="input-temp" type="number" class="vital-input" min="30" max="44" step="0.1" placeholder="37.0" />
+                  <span class="unit-tag">°C</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.tempHint">الطبيعي: 36.5 - 37.5</div>
+              </div>
+
+              <div class="card">
+                <div class="metric-label" data-i18n="belt.bp">ضغط الدم</div>
+                <div class="bp-inputs" dir="ltr">
+                  <input id="input-bp-sys" type="number" class="vital-input" min="50" max="240" step="1" placeholder="120" aria-label="Systolic" />
+                  <span>/</span>
+                  <input id="input-bp-dia" type="number" class="vital-input" min="30" max="150" step="1" placeholder="80" aria-label="Diastolic" />
+                </div>
+                <div class="range-hint" data-i18n="belt.bpHint">الطبيعي: 120/80</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-accel" data-i18n="belt.accel">التسارع الحركي</label>
+                <div class="input-row">
+                  <input id="input-accel" type="number" class="vital-input" min="0" max="10" step="0.1" placeholder="0.5" />
+                  <span class="unit-tag">g</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.accelHint">الطبيعي: 0 - 1 (أكثر من 2 سقوط)</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-caffeine" data-i18n="belt.caffeine">الكافيين اليومي</label>
+                <div class="input-row">
+                  <input id="input-caffeine" type="number" class="vital-input" min="0" max="1000" step="1" placeholder="150" />
+                  <span class="unit-tag">mg</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.caffeineHint">الطبيعي: 100 - 200 مجم</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-cortisol" data-i18n="belt.cortisol">الكورتيزول</label>
+                <div class="input-row">
+                  <input id="input-cortisol" type="number" class="vital-input" min="0" max="100" step="0.1" placeholder="14" />
+                  <span class="unit-tag">μg/dL</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.cortisolHint">الطبيعي: 10 - 20</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-hydration" data-i18n="belt.hydration">شرب المياه اليومي</label>
+                <div class="input-row">
+                  <input id="input-hydration" type="number" class="vital-input" min="0" max="15" step="0.1" placeholder="2.2" />
+                  <span class="unit-tag" data-i18n="belt.literUnit">لتر</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.hydrationHint">الطبيعي: 2 - 2.5 لتر</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-elec" data-i18n="belt.elec">الأملاح</label>
+                <div class="input-row">
+                  <input id="input-elec" type="number" class="vital-input" min="80" max="200" step="1" placeholder="140" />
+                  <span class="unit-tag">mmol/L</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.elecHint">الطبيعي: 135 - 145</div>
+              </div>
+
+              <div class="card">
+                <label class="metric-label" for="input-co2" data-i18n="belt.co2">نسبة ثاني أكسيد الكربون</label>
+                <div class="input-row">
+                  <input id="input-co2" type="number" class="vital-input" min="0" max="10" step="0.01" placeholder="0.3" />
+                  <span class="unit-tag">%</span>
+                </div>
+                <div class="range-hint" data-i18n="belt.co2Hint">الطبيعي: أقل من 0.5%</div>
+              </div>
+            </div>
+
+            <div id="belt-form-error" class="alert-box alert-danger hidden">
+              <p data-i18n="belt.formError">يرجى إدخال جميع القيم والمؤشرات أولاً قبل توليد التقرير.</p>
+            </div>
+
+            <div class="btn-row">
+              <button id="btn-generate-report" type="button" class="btn btn-primary grow" data-i18n="belt.btnGenerate">توليد التقرير</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Helmet Screen Section -->
+    <section id="helmet" class="section section-divider">
+      <div class="container">
+        <div class="section-heading reveal">
+          <h2 data-i18n="helmet.title">شاشة الخوذة (Helmet Screen)</h2>
+          <p data-i18n="helmet.desc">شاشة العرض المثبتة على الخوذة لعرض التقرير الصحي وتحليل مؤشرات رائد الفضاء بالألوان.</p>
+        </div>
+
+        <div class="grid-dashboard">
+          <div class="model-box reveal">
+            <iframe
+              title="helmet2"
+              src="https://sketchfab.com/models/5b5e62b7bc934cf79af6486a9a31ffca/embed?autostart=1&preload=1&ui_theme=dark&transparent=1&ui_infos=0&ui_watermark=0&ui_controls=0&ui_general_controls=0&ui_fullscreen=0&ui_ar=0&ui_vr=0&ui_help=0&ui_settings=0&ui_inspector=0&ui_annotations=0&ui_hint=0"
+              class="model-iframe"
+              allow="autoplay; fullscreen; xr-spatial-tracking"
+              allowfullscreen
+              loading="eager"
+            ></iframe>
+          </div>
+
+          <div class="dashboard-col reveal">
+            <!-- Rectangular Helmet Screen Monitor -->
+            <div id="helmet-screen" class="helmet-screen">
+              <div class="screen-header">
+                <span class="screen-title">WANAS HELMET DISPLAY</span>
+                <span id="helmet-overall-pill" class="screen-pill" data-i18n="helmet.waitingBadge">في انتظار البيانات</span>
+              </div>
+
+              <div id="helmet-screen-body" class="screen-body">
+                <p class="screen-empty" data-i18n="helmet.waitingMsg">
+                  أدخل جميع المؤشرات الحيوية في الأعلى ثم اضغط على «توليد التقرير» لعرض النتائج هنا على شاشة الخوذة.
+                </p>
+              </div>
+
+              <div class="screen-legend">
+                <span class="legend-item"><span class="dot green"></span><span data-i18n="helmet.legendGreen">أخضر: طبيعي</span></span>
+                <span class="legend-item"><span class="dot yellow"></span><span data-i18n="helmet.legendYellow">أصفر: تحذير</span></span>
+                <span class="legend-item"><span class="dot red"></span><span data-i18n="helmet.legendRed">أحمر: طوارئ</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Smart Joints Section -->
+    <section id="joints" class="section section-divider">
+      <div class="container">
+        <div class="section-heading reveal">
+          <h2 data-i18n="joints.title">المفاصل الذكية للبدلة الفضائية</h2>
+          <p data-i18n="joints.desc">مفاصل متطورة تساعد رائد الفضاء على ممارسة التمارين الرياضية اليومية، وتحويل طاقته الحركية إلى كهرباء لتشغيل حزام الصدر وأجهزة البدلة، بالإضافة إلى توفير مساج مريح للعضلات.</p>
+        </div>
+
+        <div class="grid-dashboard">
+          <div class="model-box reveal">
+            <iframe
+              title="Joints"
+              src="https://sketchfab.com/models/133bf13b418745ee8033aa029035e618/embed?autostart=1&preload=1&ui_theme=dark&transparent=1&ui_infos=0&ui_watermark=0&ui_controls=0&ui_general_controls=0&ui_fullscreen=0&ui_ar=0&ui_vr=0&ui_help=0&ui_settings=0&ui_inspector=0&ui_annotations=0&ui_hint=0"
+              class="model-iframe"
+              allow="autoplay; fullscreen; xr-spatial-tracking"
+              allowfullscreen
+              loading="eager"
+            ></iframe>
+          </div>
+
+          <div class="dashboard-col reveal">
+            <!-- 3 Core Functions of the Joints -->
+            <div class="joints-list">
+              <div class="card mini-card">
+                <h4 data-i18n="joints.f1Title">التمارين واللياقة اليومية</h4>
+                <p data-i18n="joints.f1Desc">مقاومة ذكية تساعد الرائد على أداء تمارينه اليومية في الفضاء</p>
+              </div>
+              <div class="card mini-card">
+                <h4 data-i18n="joints.f2Title">توليد الطاقة الكهربائية</h4>
+                <p data-i18n="joints.f2Desc">تحويل الطاقة الحركية لكهرباء تشغل حزام الصدر وأجهزة البدلة</p>
+              </div>
+              <div class="card mini-card">
+                <h4 data-i18n="joints.f3Title">مساج واستشفاء العضلات</h4>
+                <p data-i18n="joints.f3Desc">تدليك مريح لعضلات رائد الفضاء لتخفيف الإرهاق البدني</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Footer -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-copy">Copyright @WANAS Team</div>
+        <p class="footer-note" data-i18n="footerRights">مشروع ونس (WANAS) — تحدي ناسا لتطبيقات الفضاء</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/js/main.js"></script>
   </body>
 </html>
